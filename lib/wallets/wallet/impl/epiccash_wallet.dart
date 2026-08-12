@@ -510,25 +510,25 @@ class EpiccashWallet extends Bip39Wallet {
     }
   }
 
+
   Future<void> _startSync() async {
     _hackedCheckTorNodePrefs();
     Logging.instance.d("request start sync");
+
     if (_wallet == null) {
       throw Exception('Wallet not opened. Call open() first.');
     }
+
     const int refreshFromNode = 1;
-    if (!syncMutex.isLocked) {
-      await syncMutex.protect(() async {
-        // How does getWalletBalances start syncing?????????!!!!!
-        await libEpic.getWalletBalances(
-          wallet: _wallet!,
-          refreshFromNode: refreshFromNode,
-          minimumConfirmations: 10,
-        );
-      });
-    } else {
-      Logging.instance.d("request start sync denied");
-    }
+
+    await syncMutex.protect(() async {
+      // How does getWalletBalances start syncing?????????!!!!!
+      await libEpic.getWalletBalances(
+        wallet: _wallet!,
+        refreshFromNode: refreshFromNode,
+        minimumConfirmations: 10,
+      );
+    });
   }
 
   Future<
@@ -729,16 +729,6 @@ class EpiccashWallet extends Bip39Wallet {
       }
 
       Logging.instance.d("_startScans successfully at the tip");
-
-      // Ensure listener is running after refresh.
-      // Use health check to verify the Rust listener task is actually alive,
-      // not just that we have a pointer (which could be stale).
-      if (!await libEpic.isEpicboxListenerRunning(wallet: _wallet!)) {
-        Logging.instance.d("Listener not running, starting it...");
-        await _listenToEpicbox();
-      } else {
-        Logging.instance.d("Listener already running, no restart needed");
-      }
     } catch (e, s) {
       Logging.instance.e("_startScans failed: ", error: e, stackTrace: s);
       rethrow;
@@ -944,7 +934,8 @@ class EpiccashWallet extends Bip39Wallet {
 
       final String receiverAddress = txData.recipients!.first.address;
 
-      if (!receiverAddress.startsWith("http://") ||
+      // (Biz) this was OR previously, meaning it always evaluated to true
+      if (!receiverAddress.startsWith("http://") &&
           !receiverAddress.startsWith("https://")) {
         final bool isEpicboxConnected = await _testEpicboxServer(epicboxConfig);
         if (!isEpicboxConnected) {
@@ -1241,7 +1232,7 @@ class EpiccashWallet extends Bip39Wallet {
       if (doScan) {
         await _startScans();
 
-        unawaited(_startSync());
+        await(_startSync());
       }
 
       GlobalEventBus.instance.fire(RefreshPercentChangedEvent(0.0, walletId));
@@ -1276,6 +1267,12 @@ class EpiccashWallet extends Bip39Wallet {
       // await getAllTxsToWatch();
 
       GlobalEventBus.instance.fire(RefreshPercentChangedEvent(0.90, walletId));
+
+      // (Biz) epicbox listener restart moved to here, from startScans
+      if (!await libEpic.isEpicboxListenerRunning(wallet: _wallet!)) {
+          Logging.instance.d("Listener not running, starting it...");
+          await _listenToEpicbox();
+      }
 
       await updateBalance();
 
@@ -1552,6 +1549,8 @@ class EpiccashWallet extends Bip39Wallet {
         error: e,
         stackTrace: s,
       );
+
+      rethrow;
     }
   }
 
