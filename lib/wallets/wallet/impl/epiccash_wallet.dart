@@ -729,6 +729,16 @@ class EpiccashWallet extends Bip39Wallet {
       }
 
       Logging.instance.d("_startScans successfully at the tip");
+
+      // Ensure listener is running after refresh.
+      // Use health check to verify the Rust listener task is actually alive,
+      // not just that we have a pointer (which could be stale).
+      if (!await libEpic.isEpicboxListenerRunning(wallet: _wallet!)) {
+        Logging.instance.d("Listener not running, starting it...");
+        await _listenToEpicbox();
+      } else {
+        Logging.instance.d("Listener already running, no restart needed");
+      }
     } catch (e, s) {
       Logging.instance.e("_startScans failed: ", error: e, stackTrace: s);
       rethrow;
@@ -1386,6 +1396,16 @@ class EpiccashWallet extends Bip39Wallet {
       final slatesToCommits = info.epicData?.slatesToCommits ?? {};
 
       for (final tx in transactions) {
+        Logging.instance.w(
+          "EPIC TX "
+          "id=${tx.id} "
+          "slate=${tx.txSlateId} "
+          "epicbox_tx_id=${tx.epicboxTxId} "
+          "type=${tx.txType} "
+          "sentCancelled=${libEpic.txTypeIsSentCancelled(tx.txType)} "
+          "receiveCancelled=${libEpic.txTypeIsReceiveCancelled(tx.txType)}",
+        );
+
         final isIncoming =
             libEpic.txTypeIsReceived(tx.txType) ||
             libEpic.txTypeIsReceiveCancelled(tx.txType);
